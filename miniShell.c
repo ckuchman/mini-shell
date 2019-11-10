@@ -15,7 +15,7 @@ void childEndless(char *input);
 
 int main(int argc, char *argv[]) {
     //TODO testing fork limit
-    int forkLimit = 2;
+    int forkLimit = 20;
     int forkNum = 0;
 
     //Get memory block for input
@@ -109,7 +109,6 @@ void forkFunc(char *userInput) {
 
 void childExec(char *userInput) {
     char *str = NULL;
-    char *command = NULL;
     char *input = NULL;
     char *output = NULL;
     char *arg[MAX_ARG];
@@ -120,9 +119,8 @@ void childExec(char *userInput) {
         arg[i] = NULL;
     } 
 
-    command = strtok(userInput, " ");
-
-    str = strtok(NULL, " ");
+    //Determines the inputs and stores them
+    str = strtok(userInput, " ");
    
     int argNum = 0; 
     while (str != NULL) {
@@ -141,17 +139,21 @@ void childExec(char *userInput) {
         str = strtok(NULL, " ");
     }
 
-    printf("Command: %s\n", command);
+    //TODO prints for testing
+    printf("Command: %s\n", arg[0]);
     printf("Input: %s\n", input);
     printf("Output: %s\n", output);
     printf("Background: %d\n", background);
 
     i = 0;
-    while (arg[i][0] != '\n') {
+    while (arg[i] != NULL) {
         printf("Argument %d: %s\n", i, arg[i]);
         i++; 
    }
 
+   execvp(arg[0], arg);
+   perror("Exec Failure!\n");
+   exit(2);
 }
 
 
