@@ -112,6 +112,10 @@ void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
             exit(1);
             break;
         default:
+            //If not a background process then wait for the process
+            if (background == 0) {
+                childPid = wait(NULL);
+            }
             break;
     }
 }
