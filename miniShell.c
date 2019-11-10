@@ -4,14 +4,15 @@
 #include<stdlib.h>
 #include<string.h>
 
-void exitShell(void);
-void cd(char *path);
-void forkFunc(char *userInput);
-void childExec(char *userInput);
-void childEndless(char *input);
-
 #define MAX_INPUT 2049
 #define MAX_ARG 512
+
+void exitShell(void);
+void cd(char *path);
+void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background);
+void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background);
+void childExec(char *arg[MAX_ARG]);
+void childEndless(char *input);
 
 int main(int argc, char *argv[]) {
     //TODO testing fork limit
@@ -21,6 +22,12 @@ int main(int argc, char *argv[]) {
     //Get memory block for input
     char *userInput;
     userInput = (char*)malloc(sizeof(char) * MAX_INPUT);
+
+    //Storage for parsed input
+    char *input;
+    char *output;
+    char *arg[MAX_ARG];
+    int background;
 
     //Main shell loop
     while (strcmp(userInput, "exit") != 0) {
@@ -43,7 +50,12 @@ int main(int argc, char *argv[]) {
         } else {
             forkNum++;
             printf("Fork: %d PID: %d\n", forkNum, getpid());
-            forkFunc(userInput);
+
+            //Parse input
+            parseCommand(userInput, arg, &input, &output, &background);
+
+            //Run command
+            forkFunc(arg, input, output, background);
         }
 
         //TODO testing fork bomb protection
@@ -85,7 +97,7 @@ void cd(char *path) {
 }
 
 
-void forkFunc(char *userInput) {
+void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
     pid_t childPid = -5;
 
     childPid = fork();
@@ -96,9 +108,7 @@ void forkFunc(char *userInput) {
             exit(1);
             break;
         case 0:
-            //childEndless(userInput);
-            childExec(userInput);
-            //printf("child");
+            childExec(arg);
             exit(1);
             break;
         default:
@@ -107,12 +117,17 @@ void forkFunc(char *userInput) {
 }
 
 
-void childExec(char *userInput) {
+void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background) {
     char *str = NULL;
-    char *input = NULL;
-    char *output = NULL;
-    char *arg[MAX_ARG];
-    int background = 0;
+
+    printf("start\n");
+
+    //Reset the values from last input
+    *input = NULL;
+    *output = NULL;
+    *background = 0;
+
+    printf("args\n");
 
     int i;
     for (i = 0; i < MAX_ARG; i++) {
@@ -121,15 +136,16 @@ void childExec(char *userInput) {
 
     //Determines the inputs and stores them
     str = strtok(userInput, " ");
+    printf("%s\n", str);
    
     int argNum = 0; 
     while (str != NULL) {
         if (strcmp(str, "<") == 0) {
-            input = strtok(NULL, " ");
+            *input = strtok(NULL, " ");
         } else if (strcmp(str, ">") == 0) {
-            output = strtok(NULL, " ");
+            *output = strtok(NULL, " ");
         } else if (strcmp(str, "&") == 0) {
-            background = 1;
+            *background = 1;
         } else {
             arg[argNum] = str;
             argNum++;
@@ -138,22 +154,20 @@ void childExec(char *userInput) {
         //Get next word
         str = strtok(NULL, " ");
     }
+}
 
+
+void childExec(char *arg[MAX_ARG]) {
     //TODO prints for testing
-    printf("Command: %s\n", arg[0]);
-    printf("Input: %s\n", input);
-    printf("Output: %s\n", output);
-    printf("Background: %d\n", background);
-
-    i = 0;
+    int i = 0;
     while (arg[i] != NULL) {
         printf("Argument %d: %s\n", i, arg[i]);
         i++; 
-   }
+    }
 
-   execvp(arg[0], arg);
-   perror("Exec Failure!\n");
-   exit(2);
+    execvp(arg[0], arg);
+    perror("Exec Failure!\n");
+    exit(2);
 }
 
 
