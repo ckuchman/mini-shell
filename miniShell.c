@@ -3,6 +3,7 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include<fcntl.h>
 
 #define MAX_INPUT 2049
 #define MAX_ARG 512
@@ -12,7 +13,6 @@ void cd(char *path);
 void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background);
 void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background);
 void childExec(char *arg[MAX_ARG]);
-void childEndless(char *input);
 
 int main(int argc, char *argv[]) {
     //TODO testing fork limit
@@ -54,8 +54,10 @@ int main(int argc, char *argv[]) {
             //Parse input
             parseCommand(userInput, arg, &input, &output, &background);
 
-            //Run command
-            forkFunc(arg, input, output, background);
+            if (userInput[0] != '#') {
+                //Run command
+                forkFunc(arg, input, output, background);
+            }
         }
 
         //TODO testing fork bomb protection
@@ -108,6 +110,33 @@ void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
             exit(1);
             break;
         case 0:
+
+            if (input != NULL) {
+
+                int inputFile = open(input, O_RDONLY);
+
+                if (inputFile < 0) {
+                    printf("Failure to open input file\n");
+                }
+
+                if (dup2(inputFile, 0) < 0) {
+                    printf("Failed to dup input\n");
+                }
+            }
+
+            if (output != NULL) {
+
+                int outputFile = open(output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+                if (outputFile < 0) {
+                    printf("Failure to open output file\n");
+                }
+
+                if (dup2(outputFile, 1) < 0) {
+                    printf("Failed to dup output\n");
+                }
+            }
+
             childExec(arg);
             exit(1);
             break;
@@ -123,15 +152,12 @@ void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
 
 void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background) {
     char *str = NULL;
-
-    printf("start\n");
+    char *strNext = NULL;
 
     //Reset the values from last input
     *input = NULL;
     *output = NULL;
     *background = 0;
-
-    printf("args\n");
 
     int i;
     for (i = 0; i < MAX_ARG; i++) {
@@ -140,15 +166,15 @@ void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **outp
 
     //Determines the inputs and stores them
     str = strtok(userInput, " ");
-    printf("%s\n", str);
-   
+    strNext = strtok(NULL, " ");
+  
     int argNum = 0; 
     while (str != NULL) {
         if (strcmp(str, "<") == 0) {
             *input = strtok(NULL, " ");
         } else if (strcmp(str, ">") == 0) {
             *output = strtok(NULL, " ");
-        } else if (strcmp(str, "&") == 0) {
+        } else if (strcmp(str, "&") == 0 && strNext == NULL) {
             *background = 1;
         } else {
             arg[argNum] = str;
@@ -156,29 +182,21 @@ void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **outp
         }
 
         //Get next word
-        str = strtok(NULL, " ");
+        str = strNext;
+        strNext = strtok(NULL, " ");
     }
 }
 
 
 void childExec(char *arg[MAX_ARG]) {
     //TODO prints for testing
-    int i = 0;
-    while (arg[i] != NULL) {
-        printf("Argument %d: %s\n", i, arg[i]);
-        i++; 
-    }
+    //int i = 0;
+    //while (arg[i] != NULL) {
+    //    printf("Argument %d: %s\n", i, arg[i]);
+    //    i++; 
+    //}
 
     execvp(arg[0], arg);
     perror("Exec Failure!\n");
     exit(2);
-}
-
-
-
-void childEndless(char *input) {
-    while (1) {
-        printf("%s\n", input);
-        sleep(3);
-    }
 }
