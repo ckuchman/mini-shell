@@ -11,12 +11,12 @@
 void exitShell(void);
 void cd(char *path);
 void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background);
+void expandString(char *str, int strLen);
 void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background);
-void childExec(char *arg[MAX_ARG]);
 
 int main(int argc, char *argv[]) {
     //TODO testing fork limit
-    int forkLimit = 20;
+    int forkLimit = 100;
     int forkNum = 0;
 
     //Get memory block for input
@@ -40,6 +40,8 @@ int main(int argc, char *argv[]) {
         if (userInput[strlen(userInput) - 1] == '\n') {
             userInput[strlen(userInput) - 1] = '\0';
         }
+
+        expandString(userInput, MAX_INPUT);
 
         if (strcmp(userInput, "cd") == 0) {
             cd("");
@@ -110,8 +112,9 @@ void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
             exit(1);
             break;
         case 0:
-
             if (input != NULL) {
+
+                printf("input:%s\n", input);
 
                 int inputFile = open(input, O_RDONLY);
 
@@ -122,9 +125,13 @@ void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
                 if (dup2(inputFile, 0) < 0) {
                     printf("Failed to dup input\n");
                 }
+
+                close(inputFile);
             }
 
             if (output != NULL) {
+
+                printf("output:%s\n", output);
 
                 int outputFile = open(output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
@@ -135,9 +142,19 @@ void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
                 if (dup2(outputFile, 1) < 0) {
                     printf("Failed to dup output\n");
                 }
+
+                close(outputFile);
             }
 
-            childExec(arg);
+            //TODO prints for testing
+            //int i = 0;
+            //while (arg[i] != NULL) {
+            //    printf("Argument %d: %s\n", i, arg[i]);
+            //    i++; 
+            //}
+
+            execvp(arg[0], arg);
+            perror("Exec Failure!\n");
             exit(1);
             break;
         default:
@@ -147,6 +164,42 @@ void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
             }
             break;
     }
+}
+
+
+void expandString(char *str, int strLen) {
+    int pid = getpid();
+
+    int pidLen = snprintf(NULL, 0, "%d", pid);
+
+    char* pidStr = malloc(pidLen + 1);
+    snprintf(pidStr, pidLen + 1, "%d", pid);
+
+    char* tempStr = (char*)malloc(sizeof(char) * MAX_INPUT);
+    strcpy(tempStr, str);    
+
+    int i = 0, j = 0, k = 0;
+    while (tempStr[i] != '\0') {
+
+        if (tempStr[i] == '$' && tempStr[i+1] == '$') {
+            while (pidStr[k] != '\0') {
+                str[j] = pidStr[k];
+                j++;
+                k++;
+            }
+
+            k = 0;
+            i += 2;
+        } else {
+            str[j] = tempStr[i];
+
+            i++;
+            j++;
+        }
+    }
+
+    free(pidStr);
+    free(tempStr);
 }
 
 
@@ -171,32 +224,36 @@ void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **outp
     int argNum = 0; 
     while (str != NULL) {
         if (strcmp(str, "<") == 0) {
-            *input = strtok(NULL, " ");
+            *input = strNext;
+
+            str = strtok(NULL, " ");
+            
+            if (str != NULL) {
+                strNext = strtok(NULL, " ");
+            } else {
+                strNext = NULL;
+            }
         } else if (strcmp(str, ">") == 0) {
-            *output = strtok(NULL, " ");
+            *output = strNext;
+
+            str = strtok(NULL, " ");
+            
+            if (str != NULL) {
+                strNext = strtok(NULL, " ");
+            } else {
+                strNext = NULL;
+            }
+
         } else if (strcmp(str, "&") == 0 && strNext == NULL) {
             *background = 1;
+
+            str = strNext;
         } else {
             arg[argNum] = str;
             argNum++;
+
+            str = strNext;
+            strNext = strtok(NULL, " ");
         }
-
-        //Get next word
-        str = strNext;
-        strNext = strtok(NULL, " ");
     }
-}
-
-
-void childExec(char *arg[MAX_ARG]) {
-    //TODO prints for testing
-    //int i = 0;
-    //while (arg[i] != NULL) {
-    //    printf("Argument %d: %s\n", i, arg[i]);
-    //    i++; 
-    //}
-
-    execvp(arg[0], arg);
-    perror("Exec Failure!\n");
-    exit(2);
 }
