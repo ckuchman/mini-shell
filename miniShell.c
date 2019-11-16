@@ -4,20 +4,31 @@
 #include<stdlib.h>
 #include<string.h>
 #include<fcntl.h>
+#include<signal.h>
 
 #define MAX_INPUT 2049
 #define MAX_ARG 512
+#define MAX_THREADS 100
 
-void exitShell(void);
+
 void cd(char *path);
-void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background);
+pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background);
 void expandString(char *str, int strLen);
 void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background);
 
+
 int main(int argc, char *argv[]) {
-    //TODO testing fork limit
-    int forkLimit = 100;
-    int forkNum = 0;
+    //Child tracker
+    int childCount = 0;
+    pid_t childVal;
+    int *childExitMethod;
+
+    pid_t *childs = (pid_t*)malloc(sizeof(pid_t) * MAX_THREADS);
+    
+    int i = 0;
+    for (i = 0; i < MAX_THREADS; i++) {
+        childs[i] = -10;
+    }
 
     //Get memory block for input
     char *userInput;
@@ -28,6 +39,9 @@ int main(int argc, char *argv[]) {
     char *output;
     char *arg[MAX_ARG];
     int background;
+
+
+    pid_t childPid;
 
     //Main shell loop
     while (strcmp(userInput, "exit") != 0) {
@@ -49,38 +63,60 @@ int main(int argc, char *argv[]) {
             cd(userInput + 3);
         } else if (strcmp(userInput, "status") == 0) {
             //TODO status function
-        } else {
-            forkNum++;
-            printf("Fork: %d PID: %d\n", forkNum, getpid());
+        } else if (strcmp(userInput, "exit") != 0) {
+           //printf("Fork: %d PID: %d\n", forkNum, getpid());
 
             //Parse input
             parseCommand(userInput, arg, &input, &output, &background);
 
             if (userInput[0] != '#') {
                 //Run command
-                forkFunc(arg, input, output, background);
+                if (childCount < MAX_THREADS) {
+                    childPid = forkFunc(arg, input, output, background);
+
+                    if (childPid > 0) {
+                        childCount++;
+
+                        //Store the child pid in the child array
+                        i = 0;
+                        while (childs[i] != -10) {
+                            i++;
+                        }
+                        
+                        //printf("Added %d to %d\n", childPid, i);
+                        childs[i] = childPid;
+                    }                   
+                } else {
+                    printf("Too many children, wait for processes to end\n");
+                }
             }
         }
 
-        //TODO testing fork bomb protection
-        if (forkNum > forkLimit) {
-            abort();
+        //Check the children
+        for (i = 0; i < MAX_THREADS; i++) {
+            if (childs[i] != -10) {
+                childVal = waitpid(childs[i], &childExitMethod, WNOHANG); 
+
+                if (childVal != 0) {
+                    childs[i] = -10;
+                    //printf("Removed %d from %d\n", childPid, i);
+                }
+            }        
         }
     }
 
-    // Take care of children processes
-    exitShell();
+    //Exit Processes
+    for (i = 0; i < MAX_THREADS; i++) {
+        if (childs[i] != -10) { 
+            kill(childs[i], SIGINT);
+        }        
+    }   
 
     //Clear memory
+    free(childs);
     free(userInput);
 
     return 0;
-}
-
-
-void exitShell(void) {
-    //TODO Kill all other processes currently running started by the shell
-    printf("exit run");
 }
 
 
@@ -101,7 +137,7 @@ void cd(char *path) {
 }
 
 
-void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
+pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
     pid_t childPid = -5;
 
     childPid = fork();
@@ -164,6 +200,8 @@ void forkFunc(char *arg[MAX_ARG], char *input, char *output, int background) {
             }
             break;
     }
+
+    return childPid;
 }
 
 
