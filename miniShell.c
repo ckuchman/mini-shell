@@ -10,17 +10,17 @@
 #define MAX_ARG 512
 #define MAX_THREADS 100
 
+//TODO Remove global variable
+int suppressBck = 0;
 
 void cd(char *path);
 pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, int *childExitMethod);
 void expandString(char *str, int strLen);
 void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background);
+void suppressBackground(int sig);
 
 //TODO List
 //should look at PATH for commands?
-//Print the process of a background process when it begins
-//Print a message of background process and exit status when it ends
-//Implement signals
 
 int main(int argc, char *argv[]) {
     //Child tracker
@@ -35,6 +35,17 @@ int main(int argc, char *argv[]) {
     for (i = 0; i < MAX_THREADS; i++) {
         childs[i] = -10;
     }
+
+    //Handle shell signals
+    struct sigaction ign = {0};
+    ign.sa_handler = SIG_IGN;
+    sigaction(SIGINT, &ign, NULL);
+
+
+    //void (*funcSupBck) (int*) = suppressBackground;
+    struct sigaction supBck = {0};
+    supBck.sa_handler = suppressBackground;
+    sigaction(SIGTSTP, &supBck, NULL);
 
     //Get memory block for input
     char *userInput;
@@ -63,11 +74,14 @@ int main(int argc, char *argv[]) {
 
         expandString(userInput, MAX_INPUT);
 
-        if (strcmp(userInput, "cd") == 0) {
+        //Parse input
+        parseCommand(userInput, arg, &input, &output, &background);
+
+        if (strcmp(arg[0], "cd") == 0) {
             cd("");
-        } else if (strncmp(userInput, "cd ", 3) == 0) {
+        } else if (strncmp(arg[0], "cd ", 3) == 0) {
             cd(userInput + 3);
-        } else if (strcmp(userInput, "status") == 0) {
+        } else if (strcmp(arg[0], "status") == 0) {
             if (fgExitMethod == -10) {
                 printf("exit status 0?\n");
             } else {
@@ -83,18 +97,19 @@ int main(int argc, char *argv[]) {
                 }
 
             }
-        } else if (strcmp(userInput, "exit") != 0) {
+        } else if (strcmp(arg[0], "exit") != 0) {
            //printf("Fork: %d PID: %d\n", forkNum, getpid());
 
-            //Parse input
-            parseCommand(userInput, arg, &input, &output, &background);
+            if (suppressBck != 0) {
+                background = 0;
+            }
 
             if (userInput[0] != '#') {
                 //Run command
                 if (childCount < MAX_THREADS) {
                     childPid = forkFunc(arg, input, output, background, &fgExitMethod);
 
-                    if (childPid > 0) {
+                    if (childPid > 0 && background != 0) {
 
                         childCount++;
 
@@ -104,7 +119,6 @@ int main(int argc, char *argv[]) {
                             i++;
                         }
                         
-                        //printf("Added %d to %d\n", childPid, i);
                         childs[i] = childPid;
                     }                   
                 } else {
@@ -120,7 +134,16 @@ int main(int argc, char *argv[]) {
 
                 if (childVal != 0) {
                     childs[i] = -10;
-                    //printf("Removed %d from %d\n", childPid, i);
+
+                    if (WIFEXITED(fgExitMethod)) {
+                        exitStatus = WEXITSTATUS(fgExitMethod);
+                        printf("Process %d has ended, exit status %d\n", childVal, exitStatus);
+                    }
+
+                    if (WIFSIGNALED(fgExitMethod)) {
+                        exitStatus = WTERMSIG(fgExitMethod);
+                        printf("Process %d has ended, terminated by signal %d\n", childVal, exitStatus);
+                    }
                 }
             }        
         }
@@ -211,12 +234,18 @@ pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, in
                 close(outputFile);
             }
 
-            //TODO prints for testing
-            //int i = 0;
-            //while (arg[i] != NULL) {
-            //    printf("Argument %d: %s\n", i, arg[i]);
-            //    i++; 
-            //}
+
+            if (background == 0) {
+                //Handle shell signals
+                struct sigaction dft = {0};
+                dft.sa_handler = SIG_DFL;
+                sigaction(SIGINT, &dft, NULL);
+            }
+
+            //Handle shell signals
+            struct sigaction stp = {0};
+            stp.sa_handler = SIG_IGN;
+            sigaction(SIGTSTP, &stp, NULL); 
 
             execvp(arg[0], arg);
             perror("Exec Failure!\n");
@@ -225,7 +254,15 @@ pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, in
         default:
             //If not a background process then wait for the process
             if (background == 0) {
+
                 childPid = waitpid(childPid, childExitMethod, 0);
+
+                if (WIFSIGNALED(*childExitMethod)) {
+                    int exitStatus = WTERMSIG(*childExitMethod);
+                    printf("terminated by signal %d\n", exitStatus);
+                }
+            } else {
+                printf("Background process %d started\n", childPid);
             }
             break;
     }
@@ -322,5 +359,17 @@ void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **outp
             str = strNext;
             strNext = strtok(NULL, " ");
         }
+    }
+}
+
+void suppressBackground(int sig) {
+    if (suppressBck == 1) {
+        char *message = "Exiting foreground-only mode\n";
+        write(STDOUT_FILENO, message, 30);
+        suppressBck = 0;
+    } else {
+        char *message = "Entering foreground-only mode (& is now ignored)\n";
+        write(STDOUT_FILENO, message, 50);
+        suppressBck = 1;
     }
 }
