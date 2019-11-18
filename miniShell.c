@@ -6,43 +6,51 @@
 #include<fcntl.h>
 #include<signal.h>
 
+
 #define MAX_INPUT 2049
 #define MAX_ARG 512
 #define MAX_THREADS 100
 
+
 //TODO make into a sig_atomic_t
 int suppressBck = 0;
 
-void cd(char *path);
+
 pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, int *childExitMethod);
 void expandString(char *str, int strLen);
 void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background);
 void suppressBackground(int sig);
 
+
 //TODO List
 //should look at PATH for commands?
 
-int main(int argc, char *argv[]) {
-    //Child tracker
-    int childCount = 0;
-    pid_t childVal;
-    int fgExitMethod = -10; 
-    int childExitMethod, exitStatus;
 
+int main(int argc, char *argv[]) {
+
+    //Creating the favorite iterator
+    int i;
+
+    //Child tracker variables
+    pid_t childPid;
+    int childCount = 0;
+    int fgExitMethod = -10; 
+    int childExitMethod = -10;
+    int exitStatus;
+
+    //Generate array to store child process id's, using -10 as a null indicator
     pid_t *childs = (pid_t*)malloc(sizeof(pid_t) * MAX_THREADS);
     
-    int i = 0;
     for (i = 0; i < MAX_THREADS; i++) {
         childs[i] = -10;
     }
 
-    //Handle shell signals
+    //Sets parent shell to ignore Ctrl+C commands
     struct sigaction ign = {0};
     ign.sa_handler = SIG_IGN;
     sigaction(SIGINT, &ign, NULL);
 
-
-    //void (*funcSupBck) (int*) = suppressBackground;
+    //Sets parent shell to toggle suppression of background on Ctrl+Z
     struct sigaction supBck = {0};
     supBck.sa_handler = suppressBackground;
     sigaction(SIGTSTP, &supBck, NULL);
@@ -57,102 +65,123 @@ int main(int argc, char *argv[]) {
     char *arg[MAX_ARG];
     int background;
 
-    pid_t childPid;
-
-    //Main shell loop
-    while (strcmp(userInput, "exit") != 0) {
+    //Main shell loop which ends on exit command
+    while (strcmp(arg[0], "exit") != 0) {
 
         //Take in user input
         printf(": ");
         fflush(stdout);
         fgets(userInput, MAX_INPUT, stdin); 
 
-        //Clears new line
+        //Clears new line from input
         if (userInput[strlen(userInput) - 1] == '\n') {
             userInput[strlen(userInput) - 1] = '\0';
         }
 
+        //Replaces $$ with shell process id
         expandString(userInput, MAX_INPUT);
 
         //Parse input
         parseCommand(userInput, arg, &input, &output, &background);
 
+        //If the suppress background setting is active then treat as
+        //always not run on background
+        if (suppressBck != 0) {
+            background = 0;
+        }
+
+        //Check over built in commands
         if (strcmp(arg[0], "cd") == 0) {
-            cd(arg[1]);
+
+	    //If path is empty cd to HOME otherwise go to location
+	    if (arg[1] == NULL) {
+		chdir(getenv("HOME"));
+	    } else {
+		chdir(path);
+	    }
+
         } else if (strcmp(arg[0], "status") == 0) {
+
+            //Checks if a foreground process has been ran
             if (fgExitMethod == -10) {
                 printf("exit status 0\n");
                 fflush(stdout);
             } else {
 
+                //Prints the appropriate message dependent on if 
+                //it was a exit status or signal
                 if (WIFEXITED(fgExitMethod)) {
                     exitStatus = WEXITSTATUS(fgExitMethod);
                     printf("exit status %d\n", exitStatus);
                     fflush(stdout);
                 }
-
                 if (WIFSIGNALED(fgExitMethod)) {
                     exitStatus = WTERMSIG(fgExitMethod);
                     printf("terminated by signal %d\n", exitStatus);
                     fflush(stdout);
                 }
             }
-        } else if (strcmp(arg[0], "exit") != 0 && arg[0] != "") {
-           //printf("Fork: %d PID: %d\n", forkNum, getpid());
+        } else if (strcmp(arg[0], "exit") != 0 && arg[0] != "" && userInput[0] != '#') {
 
-            if (suppressBck != 0) {
-                background = 0;
-            }
+	    //Run command so long as there are not too many background processes being run
+	    if (childCount < MAX_THREADS) {
 
-            if (userInput[0] != '#') {
-                //Run command
-                if (childCount < MAX_THREADS) {
-                    childPid = forkFunc(arg, input, output, background, &fgExitMethod);
+                //Fork child to run command
+		childPid = forkFunc(arg, input, output, background, &fgExitMethod);
 
-                    if (childPid > 0 && background != 0) {
+                //If the child was successfully created and ran in the background
+		if (childPid > 0 && background != 0) {
 
-                        childCount++;
+		    //Store the child pid in the child array
+		    i = 0;
+		    while (childs[i] != -10) {
+			i++;
+		    }		    
+		    childs[i] = childPid;
+                    childCount++;
+		}                   
+	    } else {
 
-                        //Store the child pid in the child array
-                        i = 0;
-                        while (childs[i] != -10) {
-                            i++;
-                        }
-                        
-                        childs[i] = childPid;
-                    }                   
-                } else {
-                    printf("Too many children, wait for processes to end\n");
-                    fflush(stdout);
-                }
-            }
+                //Error if too many things in background
+		printf("Too many children, wait for processes to end\n");
+		fflush(stdout);
+	    }
         }
 
-        //Check the children
+        //Check the background children for zombies
         for (i = 0; i < MAX_THREADS; i++) {
+
+            //If the array is storing a process number then check on it
             if (childs[i] != -10) {
-                childVal = waitpid(childs[i], &childExitMethod, WNOHANG); 
 
-                if (childVal != 0) {
-                    childs[i] = -10;
+                //Check individual child status
+                childPid = waitpid(childs[i], &childExitMethod, WNOHANG); 
 
+                //If the child has already terminated then display exit status/term signal, otherwise ignore
+                if (childPid != 0) {
+
+                    //Prints the appropriate message dependent on if 
+                    //it was a exit status or signal
                     if (WIFEXITED(childExitMethod)) {
                         exitStatus = WEXITSTATUS(childExitMethod);
-                        printf("Process %d has ended, exit status %d\n", childVal, exitStatus);
+                        printf("Process %d has ended, exit status %d\n", childPid, exitStatus);
+                        fflush(stdout);
+                    }
+                    if (WIFSIGNALED(childExitMethod)) {
+                        exitStatus = WTERMSIG(childExitMethod);
+                        printf("Process %d has ended, terminated by signal %d\n", childPid, exitStatus);
                         fflush(stdout);
                     }
 
-                    if (WIFSIGNALED(childExitMethod)) {
-                        exitStatus = WTERMSIG(childExitMethod);
-                        printf("Process %d has ended, terminated by signal %d\n", childVal, exitStatus);
-                        fflush(stdout);
-                    }
+                    //Remove the process from the child array
+                    childs[i] = -10;
+                    childCount--;
                 }
             }        
         }
     }
 
-    //Exit Processes
+    //Exit all background processes
     for (i = 0; i < MAX_THREADS; i++) {
         if (childs[i] != -10) { 
             kill(childs[i], SIGINT);
@@ -167,27 +196,9 @@ int main(int argc, char *argv[]) {
 }
 
 
-void cd(char *path) {
-    char *truePath;
-    truePath = (char*)malloc(sizeof(char) * MAX_INPUT);
-
-    //printf("Path: %s\n", path);
-
-    //If path is empty cd to HOME otherwise go to location
-    if (path == NULL) {
-        printf("no input, using HOME");
-        fflush(stdout);
-
-        truePath = getenv("HOME");
-        chdir(truePath);
-    } else {
-        chdir(path);
-    }
-}
-
-
 pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, int *childExitMethod) {
-    pid_t childPid = -5;
+
+    pid_t childPid = -10;
 
     childPid = fork();
     switch (childPid)
