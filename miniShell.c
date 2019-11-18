@@ -10,7 +10,7 @@
 #define MAX_ARG 512
 #define MAX_THREADS 100
 
-//TODO Remove global variable
+//TODO make into a sig_atomic_t
 int suppressBck = 0;
 
 void cd(char *path);
@@ -57,7 +57,6 @@ int main(int argc, char *argv[]) {
     char *arg[MAX_ARG];
     int background;
 
-
     pid_t childPid;
 
     //Main shell loop
@@ -65,7 +64,8 @@ int main(int argc, char *argv[]) {
 
         //Take in user input
         printf(": ");
-        fgets(userInput, MAX_INPUT, stdin);
+        fflush(stdout);
+        fgets(userInput, MAX_INPUT, stdin); 
 
         //Clears new line
         if (userInput[strlen(userInput) - 1] == '\n') {
@@ -78,26 +78,26 @@ int main(int argc, char *argv[]) {
         parseCommand(userInput, arg, &input, &output, &background);
 
         if (strcmp(arg[0], "cd") == 0) {
-            cd("");
-        } else if (strncmp(arg[0], "cd ", 3) == 0) {
-            cd(userInput + 3);
+            cd(arg[1]);
         } else if (strcmp(arg[0], "status") == 0) {
             if (fgExitMethod == -10) {
-                printf("exit status 0?\n");
+                printf("exit status 0\n");
+                fflush(stdout);
             } else {
 
                 if (WIFEXITED(fgExitMethod)) {
                     exitStatus = WEXITSTATUS(fgExitMethod);
                     printf("exit status %d\n", exitStatus);
+                    fflush(stdout);
                 }
 
                 if (WIFSIGNALED(fgExitMethod)) {
                     exitStatus = WTERMSIG(fgExitMethod);
                     printf("terminated by signal %d\n", exitStatus);
+                    fflush(stdout);
                 }
-
             }
-        } else if (strcmp(arg[0], "exit") != 0) {
+        } else if (strcmp(arg[0], "exit") != 0 && arg[0] != "") {
            //printf("Fork: %d PID: %d\n", forkNum, getpid());
 
             if (suppressBck != 0) {
@@ -123,6 +123,7 @@ int main(int argc, char *argv[]) {
                     }                   
                 } else {
                     printf("Too many children, wait for processes to end\n");
+                    fflush(stdout);
                 }
             }
         }
@@ -135,14 +136,16 @@ int main(int argc, char *argv[]) {
                 if (childVal != 0) {
                     childs[i] = -10;
 
-                    if (WIFEXITED(fgExitMethod)) {
-                        exitStatus = WEXITSTATUS(fgExitMethod);
+                    if (WIFEXITED(childExitMethod)) {
+                        exitStatus = WEXITSTATUS(childExitMethod);
                         printf("Process %d has ended, exit status %d\n", childVal, exitStatus);
+                        fflush(stdout);
                     }
 
-                    if (WIFSIGNALED(fgExitMethod)) {
-                        exitStatus = WTERMSIG(fgExitMethod);
+                    if (WIFSIGNALED(childExitMethod)) {
+                        exitStatus = WTERMSIG(childExitMethod);
                         printf("Process %d has ended, terminated by signal %d\n", childVal, exitStatus);
+                        fflush(stdout);
                     }
                 }
             }        
@@ -168,16 +171,18 @@ void cd(char *path) {
     char *truePath;
     truePath = (char*)malloc(sizeof(char) * MAX_INPUT);
 
+    //printf("Path: %s\n", path);
+
     //If path is empty cd to HOME otherwise go to location
-    if (strcmp(path, "") == 0) {
+    if (path == NULL) {
         printf("no input, using HOME");
+        fflush(stdout);
 
         truePath = getenv("HOME");
+        chdir(truePath);
     } else {
-        truePath = path;
+        chdir(path);
     }
-
-    chdir(truePath);
 }
 
 
@@ -189,6 +194,7 @@ pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, in
     {
         case -1:
             perror("Fork Failure");
+            fflush(stderr);
             exit(1);
             break;
         case 0:
@@ -202,11 +208,13 @@ pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, in
 
                 if (inputFile < 0) {
                     printf("Failure to open input file\n");
+                    fflush(stdout);
                     exit(1);
                 }
 
                 if (dup2(inputFile, 0) < 0) {
                     printf("Failed to dup input\n");
+                    fflush(stdout);
                     exit(1);
                 }
 
@@ -223,11 +231,13 @@ pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, in
 
                 if (outputFile < 0) {
                     printf("Failure to open output file\n");
+                    fflush(stdout);
                     exit(1);
                 }
 
                 if (dup2(outputFile, 1) < 0) {
                     printf("Failed to dup output\n");
+                    fflush(stdout);
                     exit(1);
                 }
 
@@ -249,6 +259,7 @@ pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, in
 
             execvp(arg[0], arg);
             perror("Exec Failure!\n");
+            fflush(stderr);
             exit(1);
             break;
         default:
@@ -260,9 +271,11 @@ pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, in
                 if (WIFSIGNALED(*childExitMethod)) {
                     int exitStatus = WTERMSIG(*childExitMethod);
                     printf("terminated by signal %d\n", exitStatus);
+                    fflush(stdout);
                 }
             } else {
                 printf("Background process %d started\n", childPid);
+                fflush(stdout);
             }
             break;
     }
@@ -301,6 +314,7 @@ void expandString(char *str, int strLen) {
             j++;
         }
     }
+    str[j] = '\0';
 
     free(pidStr);
     free(tempStr);
@@ -320,6 +334,11 @@ void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **outp
     for (i = 0; i < MAX_ARG; i++) {
         arg[i] = NULL;
     } 
+
+    if (*userInput == '\0') {
+         arg[0] = "";
+         return;
+    }
 
     //Determines the inputs and stores them
     str = strtok(userInput, " ");
@@ -366,10 +385,12 @@ void suppressBackground(int sig) {
     if (suppressBck == 1) {
         char *message = "Exiting foreground-only mode\n";
         write(STDOUT_FILENO, message, 30);
+        fflush(stdout);
         suppressBck = 0;
     } else {
         char *message = "Entering foreground-only mode (& is now ignored)\n";
         write(STDOUT_FILENO, message, 50);
+        fflush(stdout);
         suppressBck = 1;
     }
 }
