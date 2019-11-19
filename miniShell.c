@@ -64,6 +64,7 @@ int main(int argc, char *argv[]) {
     char *output;
     char *arg[MAX_ARG];
     int background;
+    arg[0] = "";
 
     //Main shell loop which ends on exit command
     while (strcmp(arg[0], "exit") != 0) {
@@ -97,7 +98,7 @@ int main(int argc, char *argv[]) {
 	    if (arg[1] == NULL) {
 		chdir(getenv("HOME"));
 	    } else {
-		chdir(path);
+		chdir(arg[1]);
 	    }
 
         } else if (strcmp(arg[0], "status") == 0) {
