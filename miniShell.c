@@ -372,6 +372,8 @@ void expandString(char *str, int strLen) {
 
 
 void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background) {
+    //This function takes in a string and parses it for commands arguments, redirection and a background flag
+
     char *str = NULL;
     char *strNext = NULL;
 
@@ -385,43 +387,58 @@ void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **outp
         arg[i] = NULL;
     } 
 
+    //If the input was blank then return a blank command in the arg list
     if (*userInput == '\0') {
          arg[0] = "";
          return;
     }
 
-    //Determines the inputs and stores them
+    //Takes in the first word (the command) and the following word
     str = strtok(userInput, " ");
     strNext = strtok(NULL, " ");
   
+    //Iterate over the words in the user input string
     int argNum = 0; 
     while (str != NULL) {
+
+        //If a < then take the next word as the input location
         if (strcmp(str, "<") == 0) {
+
             *input = strNext;
 
             str = strtok(NULL, " ");
             
+            //Sets the correct next word if one exists
             if (str != NULL) {
                 strNext = strtok(NULL, " ");
             } else {
                 strNext = NULL;
             }
+
+        //If a > then take the next word as the output location
         } else if (strcmp(str, ">") == 0) {
+
             *output = strNext;
 
             str = strtok(NULL, " ");
-            
+
+             //Sets the correct next word if one exists           
             if (str != NULL) {
                 strNext = strtok(NULL, " ");
             } else {
                 strNext = NULL;
             }
 
+        //If the last word is a & set the background flag
         } else if (strcmp(str, "&") == 0 && strNext == NULL) {
+
             *background = 1;
 
             str = strNext;
+
+        //All other words are stored as commands
         } else {
+
             arg[argNum] = str;
             argNum++;
 
@@ -432,6 +449,10 @@ void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **outp
 }
 
 void suppressBackground(int sig) {
+    //This function takes in a signal and flips a suppress flag that controls if
+    //the background process command works or not
+
+    //Flip the suppress flag and print the new status
     if (suppressBck == 1) {
         char *message = "Exiting foreground-only mode\n";
         write(STDOUT_FILENO, message, 30);
