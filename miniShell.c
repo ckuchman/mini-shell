@@ -12,18 +12,14 @@
 #define MAX_THREADS 100
 
 
-//TODO make into a sig_atomic_t
-int suppressBck = 0;
+//Global that controls if background processes are allowed
+volatile sig_atomic_t suppressBck = 0;
 
 
 pid_t forkFunc(char *arg[MAX_ARG], char *input, char *output, int background, int *childExitMethod);
 void expandString(char *str, int strLen);
 void parseCommand(char *userInput, char *arg[MAX_ARG], char **input, char **output, int *background);
 void suppressBackground(int sig);
-
-
-//TODO List
-//should look at PATH for commands?
 
 
 int main(int argc, char *argv[]) {
@@ -147,6 +143,9 @@ int main(int argc, char *argv[]) {
 		printf("Too many children, wait for processes to end\n");
 		fflush(stdout);
 	    }
+        } else {
+            printf("\n");
+            fflush(stdout);
         }
 
         //Check the background children for zombies
